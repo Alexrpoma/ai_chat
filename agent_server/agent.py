@@ -50,9 +50,11 @@ class AgentService:
             {"role": "system", "content": self.__instructions}
         ]
 
-        self.MAX_CONTEXT_TOKENS = 4096
+        self.MAX_CONTEXT_TOKENS = 2048
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
-        self.current_history_tokens = self.count_initial_tokens()
+        self.current_context_tokens = self.count_initial_tokens()
+
+        self.output_context_tokens = 0
 
         save_history_to_file(self.__chat_history)
 
@@ -68,22 +70,24 @@ class AgentService:
 
     def truncate_history(self):
         """Truncates the chat history if the total token count exceeds the maximum allowed."""
-        if self.current_history_tokens <= self.MAX_CONTEXT_TOKENS:
+        if self.current_context_tokens <= self.MAX_CONTEXT_TOKENS:
             return
 
-        print(f"Current tokens ({self.current_history_tokens}) exceed the limit ({self.MAX_CONTEXT_TOKENS}). Truncating...")
-        save_history_to_file(self.__chat_history, "chat_history_truncated.txt")
+        print(f"Current tokens ({self.current_context_tokens}) exceed the limit ({self.MAX_CONTEXT_TOKENS}). Truncating...")
 
-        while self.current_history_tokens > self.MAX_CONTEXT_TOKENS and len(self.__chat_history) > 3:
+        save_history_to_file(self.__chat_history, "chat_history_before_llm.txt")
+
+        while self.current_context_tokens > self.MAX_CONTEXT_TOKENS and len(self.__chat_history) > 3:
             # Delete the oldest message pair (user and assistant) after the system prompt
             removed_user_msg = self.__chat_history.pop(1)
             removed_assistant_msg = self.__chat_history.pop(1)  # Now the assistant is at index 1
 
             # Subtracting the tokens of deleted messages from the global counter
-            self.current_history_tokens -= self.count_tokens_for_message(removed_user_msg)
-            self.current_history_tokens -= self.count_tokens_for_message(removed_assistant_msg)
+            self.current_context_tokens -= self.count_tokens_for_message(removed_user_msg)
+            self.current_context_tokens -= self.count_tokens_for_message(removed_assistant_msg)
+            print(f"Pair of messages deleted. Current context tokens: ~{self.current_context_tokens}")
 
-            print(f"Pair of messages deleted. Current tokens: ~{self.current_history_tokens}")
+        save_history_to_file(self.__chat_history, "chat_history_truncated.txt")
 
     async def run(self, mcp_server: MCPServer):
         set_tracing_disabled(disabled=True)
@@ -92,7 +96,7 @@ class AgentService:
             name="Alva",
             model=OpenAIChatCompletionsModel(model=self.__model, openai_client=self.__client),
             mcp_servers=[mcp_server],
-            model_settings=ModelSettings(tool_choice="auto", temperature=0.1, top_p=1.0)
+            model_settings=ModelSettings(tool_choice="auto", temperature=0.1, top_p=0.95)
         )
 
         while True:
@@ -109,25 +113,25 @@ class AgentService:
                 user_message = {"role": "user", "content": user_input}
 
                 self.__chat_history.append(user_message)
-                self.current_history_tokens += self.count_tokens_for_message(user_message)
+                self.current_context_tokens += self.count_tokens_for_message(user_message)
 
                 self.truncate_history() # Ensure history is within token limits
 
-                save_history_to_file(self.__chat_history, "chat_history_before_llm.txt")
+                save_history_to_file(self.__chat_history, "current_chat_history_llm.txt")
 
                 result = await Runner.run(starting_agent=agent, input=self.__chat_history)
 
-                turn_output_tokens = 0
                 if result and result.raw_responses:
-                    turn_input_tokens = 0
+                    self.current_context_tokens = result.raw_responses[0].usage.input_tokens
 
+                    # Total tokens processed
+                    turn_input_tokens = 0
+                    turn_output_tokens = 0
                     for response in result.raw_responses:
                         if response.usage:
                             turn_input_tokens += response.usage.input_tokens
                             turn_output_tokens += response.usage.output_tokens
-
-                    print(f"Actual API usage this turn: {turn_input_tokens} input, {turn_output_tokens} output.")
-                    self.current_history_tokens = turn_input_tokens
+                    print(f"API: Total tokens usage this turn: {turn_input_tokens} input, {turn_output_tokens} output.")
 
                 if result and result.final_output:
                     assistant_response = result.final_output
@@ -136,14 +140,9 @@ class AgentService:
                     # print(f"Alva: {assistant_response}")
                     print(f"Alva: {cleaned_assistant_response}")
                     self.__chat_history.append(assistant_message)
+                    self.current_context_tokens += self.count_tokens_for_message(assistant_message)
 
-                    if result and result.raw_responses and turn_output_tokens > 0:
-                        self.current_history_tokens += turn_output_tokens
-                    else:
-                        # Fallback to estimate if the API does not return usage
-                        self.current_history_tokens += self.count_tokens_for_message(assistant_message)
-
-                    print(f"Total history tokens for the next round: {self.current_history_tokens}")
+                    print(f"Total history tokens for the next round: {self.current_context_tokens}")
                 else:
                     print("Alva: I'm having trouble processing that request. Could you try rephrasing it?")
 
@@ -167,13 +166,6 @@ class AgentService:
             print("Initializing Alva agent")
             print(f"Using model: {self.__model} via {self.__client.base_url}")
             await self.run(server)
-
-class ToolsHooks(RunHooks):
-    async def on_tool_call_end(self, context, tool_calls, tool_outputs):
-        print("--- TOOLS EXECUTED ---")
-        print(f"Calls: {tool_calls}")
-        print(f"Results: {tool_outputs}")
-        print("---------------------------")
 
 if __name__ == "__main__":
     asyncio.run(AgentService().streamable_http())
