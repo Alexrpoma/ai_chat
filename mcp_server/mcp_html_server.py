@@ -2,6 +2,7 @@ import math
 import random
 import string
 
+import httpx
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("Echo Server with Tools")
@@ -204,6 +205,56 @@ def ofertas_html() -> dict:
     print("Ofertas . . .")
     html = "<ul><li>Oferta 1</li><li>Oferta 2</li><li>Oferta 3</li></ul>"
     return {"html": html}
+
+
+@mcp.tool(description="Fetches pending bills for a given service identifier. Requires the service identifier number.")
+async def check_pending_bills(serviceIdentifier: str) -> dict:
+    """
+    Calls an external service to get pending bills for a specific service ID.
+    Returns the result as an HTML snippet.
+    """
+    print(f"\n[tool] Checking pending bills for service identifier: {serviceIdentifier}")
+
+    external_service_url = "http://10.47.19.154:7081/toolsVivaBo/tmf-api/invoiceManagement/v2/checkBills"
+
+    request_payload = {
+        "partyId": "1001",
+        "sessionId": "session-001",
+        "serviceIdentifier": serviceIdentifier
+    }
+
+    try:
+
+        async with httpx.AsyncClient() as client:
+
+            response = await client.post(external_service_url, json=request_payload, timeout=10.0)
+            response.raise_for_status()
+
+            data = response.json()
+
+            # data -> data -> billDetails
+            if "data" in data and "data" in data["data"] and "billDetails" in data["data"]["data"]:
+                html_content = data["data"]["data"]["billDetails"]
+                return {"html": html_content}
+            else:
+                print(f"[tool_error] Unexpected response structure from external service: {data}")
+                return {
+                    "html": "<div class='error'>Error: The external service returned an unexpected response format.</div>"}
+
+    except httpx.HTTPStatusError as e:
+        print(f"[tool_error] HTTP error calling external service: {e.response.status_code} - {e.response.text}")
+        return {
+            "html": f"<div class='error'>Error: Could not connect to the billing service (HTTP {e.response.status_code}).</div>"}
+
+    except httpx.RequestError as e:
+        print(f"[tool_error] Network error calling external service: {e}")
+        return {
+            "html": "<div class='error'>Error: A network problem occurred while trying to connect to the billing service.</div>"}
+
+    except Exception as e:
+        print(f"[tool_error] An unexpected error occurred: {e}")
+        return {"html": "<div class='error'>An unexpected error occurred while checking bills.</div>"}
+
 
 if __name__ == "__main__":
     print("Starting FastMCP server with various tools...")
