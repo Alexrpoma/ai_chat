@@ -1,0 +1,35 @@
+services:
+
+  ollama:
+    image: ollama/ollama
+    container_name: ollama_service
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  ollama-setup:
+    image: ollama/ollama
+    container_name: ollama_setup
+    depends_on:
+      - ollama
+    command: >
+      sh -c "
+        echo 'Waiting for Ollama to be available...' &&
+        while ! curl -s http://ollama:11434 > /dev/null; do
+          sleep 1
+        done &&
+        echo 'Ollama is ready. Downloading the qwen3:0.6b model....' &&
+        ollama run qwen3:0.6b && 
+        echo 'Model downloaded successfully.'
+      "
+    volumes:
+      - ollama_data:/root/.ollama

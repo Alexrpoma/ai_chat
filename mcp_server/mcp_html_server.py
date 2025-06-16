@@ -3,7 +3,7 @@ import random
 import string
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Context
 
 mcp = FastMCP("Echo Server with Tools")
 
@@ -207,27 +207,27 @@ def ofertas_html() -> dict:
     return {"html": html}
 
 
-@mcp.tool(description="Fetches pending bills for a given service identifier. Requires the service identifier number.")
-async def check_pending_bills(serviceIdentifier: str) -> dict:
+@mcp.tool(description="Fetches pending bills for a customer. Requires the customer's service identifier, their party ID, and the current session ID.")
+async def check_pending_bills(service_identifier: str, party_id: str, session_id: str) -> dict:
     """
-    Calls an external service to get pending bills for a specific service ID.
+    Calls an external service to get pending bills.
     Returns the result as an HTML snippet.
     """
-    print(f"\n[tool] Checking pending bills for service identifier: {serviceIdentifier}")
+    print(f"\n[tool] Checking pending bills for service_identifier: {service_identifier}, party_id: {party_id}, session_id: {session_id}")
 
     external_service_url = "http://10.47.19.154:7081/toolsVivaBo/tmf-api/invoiceManagement/v2/checkBills"
 
     request_payload = {
-        "partyId": "1001",
-        "sessionId": "session-001",
-        "serviceIdentifier": serviceIdentifier
+        "partyId": party_id,
+        "sessionId": session_id,
+        "serviceIdentifier": service_identifier
     }
 
     try:
 
         async with httpx.AsyncClient() as client:
 
-            response = await client.post(external_service_url, json=request_payload, timeout=10.0)
+            response = await client.post(external_service_url, json=request_payload, timeout=4.0)
             response.raise_for_status()
 
             data = response.json()

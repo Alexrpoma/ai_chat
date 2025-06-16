@@ -8,7 +8,7 @@ from agents import OpenAIChatCompletionsModel, ModelSettings, Runner, Agent, set
 from agents.mcp import MCPServer, MCPServerStreamableHttp
 from openai import AsyncOpenAI
 
-# ## NUEVO ## - Imports para FastAPI
+
 from fastapi import FastAPI, Request
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any

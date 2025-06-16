@@ -1,0 +1,14 @@
+[
+  {
+    "role": "user",
+    "content": "cuanto es 23 mas 343"
+  },
+  {
+    "role": "assistant",
+    "content": "<div>The result of 23.0 + 343.0 is <strong>366.0</strong></div>"
+  },
+  {
+    "role": "user",
+    "content": "el resultado dividelo entre 3"
+  }
+]
