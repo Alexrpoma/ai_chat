@@ -54,7 +54,7 @@ async def chat_endpoint(request: ChatRequest):
 
         response_data = ResponseData(
             transactionId=processed_result.transactionId,
-            messages=[response_message]
+            message=response_message
         )
 
         return ChatResponse(data=response_data)

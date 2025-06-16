@@ -25,7 +25,7 @@ class ResponseMessage(BaseModel):
 
 class ResponseData(BaseModel):
     transactionId: Optional[Any] = Field(None)
-    messages: List[ResponseMessage]
+    message: ResponseMessage
 
 class ChatResponse(BaseModel):
     responseCode: str = "OK"
