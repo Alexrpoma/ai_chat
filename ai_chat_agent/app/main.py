@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from .models.chat_models import ChatRequest, ChatResponse
+from .models.chat_models import ChatRequest, ChatResponse, ResponseMessage, ResponseData
 from .services.agent_service import AgentService
 
 app = FastAPI(
@@ -36,13 +36,28 @@ async def chat_endpoint(request: ChatRequest):
         # Filter any None value to not pass empty keys
         metadata = {k: v for k, v in metadata.items() if v is not None}
 
-        response_content = await agent_service.process_chat(request.prompt, history_dicts, metadata=metadata)
+        processed_result = await agent_service.process_chat(
+            prompt=request.content,
+            history=history_dicts,
+            metadata={
+                "partyId": request.partyId,
+                "sessionId": request.sessionId,
+                "serviceIdentifier": request.serviceIdentifier
+            }
+        )
 
-        return ChatResponse(
+        response_message = ResponseMessage(
             partyId=request.partyId,
             sessionId=request.sessionId,
-            content=response_content
+            content=processed_result.content
         )
+
+        response_data = ResponseData(
+            transactionId=processed_result.transactionId,
+            messages=[response_message]
+        )
+
+        return ChatResponse(data=response_data)
 
     except Exception as e:
         print(f"❌ Fatal error on the /chat endpoint: {e}")

@@ -10,6 +10,7 @@ from openai import AsyncOpenAI
 
 from ..core.config import settings
 from ..models.context_models import ChatContext
+from ..models.service_models import ProcessedChatResult
 
 
 def clean_assistant_response(response_text: str) -> str:
@@ -69,7 +70,7 @@ class AgentService:
         print(f"✅ History truncated. Final tokens: ~{self.count_total_tokens(final_history)}")
         return final_history
 
-    async def process_chat(self, prompt: str, history: List[Dict], metadata: Optional[Dict[str, Any]] = None) -> str:
+    async def process_chat(self, prompt: str, history: List[Dict], metadata: Optional[Dict[str, Any]] = None) -> str | ProcessedChatResult:
         current_chat_history = self.__base_history.copy()
 
         chat_context = ChatContext(**(metadata or {}))
@@ -94,7 +95,9 @@ class AgentService:
         current_chat_history = self.truncate_history(current_chat_history)
 
         set_tracing_disabled(disabled=True)
-        final_response_text = ""
+
+        final_response_content = ""
+        transaction_id = None
 
         async with MCPServerStreamableHttp(
                 name="Streamable HTTP Python Server",
@@ -115,20 +118,20 @@ class AgentService:
         if result and result.final_output:
             output_string = result.final_output
             try:
-                first_level_data = json.loads(output_string)
-                if isinstance(first_level_data, dict) and 'text' in first_level_data:
-                    json_string_from_text_key = first_level_data['text']
-                    second_level_data = json.loads(json_string_from_text_key)
-                    if isinstance(second_level_data, dict) and 'html' in second_level_data:
-                        final_response_text = second_level_data['html']
-                    else:
-                        final_response_text = json_string_from_text_key
+                output_data = json.loads(output_string)
+                if isinstance(output_data, dict):
+                    final_response_content = output_data.get("html", str(output_data))
+                    transaction_id = output_data.get("transactionId")
                 else:
-                    final_response_text = output_string
-            except (json.JSONDecodeError, TypeError):
-                final_response_text = clean_assistant_response(output_string)
+                    final_response_content = clean_assistant_response(str(output_data))
 
-        if not final_response_text:
+            except (json.JSONDecodeError, TypeError):
+                final_response_content = clean_assistant_response(output_string)
+
+        if not final_response_content:
             return "Sorry, I had trouble processing your request."
 
-        return final_response_text
+        return ProcessedChatResult(
+            content=final_response_content,
+            transactionId=transaction_id
+        )
